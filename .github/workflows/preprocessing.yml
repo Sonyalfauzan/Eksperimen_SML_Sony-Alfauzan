@@ -1,0 +1,52 @@
+name: Automated Preprocessing Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  preprocessing:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12.7'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy scikit-learn matplotlib seaborn
+
+    - name: Run preprocessing pipeline
+      run: |
+        cd preprocessing
+        python automate_Sony-Alfauzan.py
+
+    - name: Verify preprocessed output
+      run: |
+        echo "=== Checking preprocessed files ==="
+        ls -la preprocessing/wine_quality_preprocessing.csv
+        ls -la preprocessing/wine_quality_train.csv
+        ls -la preprocessing/wine_quality_test.csv
+        echo "=== Preview preprocessed data ==="
+        head -5 preprocessing/wine_quality_preprocessing.csv
+
+    - name: Commit and push preprocessed data
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add preprocessing/wine_quality_preprocessing.csv
+        git add preprocessing/wine_quality_train.csv
+        git add preprocessing/wine_quality_test.csv
+        git diff --cached --quiet || git commit -m "Update preprocessed dataset [automated]"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
