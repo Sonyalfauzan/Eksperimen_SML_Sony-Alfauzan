@@ -43,8 +43,8 @@ jobs:
 
     - name: Commit and push preprocessed data
       run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
+        git config --local user.email "sonyalfauzan46@gmail.com"
+        git config --local user.name "sonyalfauzan"
         git add preprocessing/wine_quality_preprocessing.csv
         git add preprocessing/wine_quality_train.csv
         git add preprocessing/wine_quality_test.csv
