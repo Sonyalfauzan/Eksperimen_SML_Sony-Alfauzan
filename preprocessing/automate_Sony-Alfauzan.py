@@ -250,28 +250,36 @@ def categorize_quality(df: pd.DataFrame) -> pd.DataFrame:
     return df_cat
 
 
-def scale_features(X: pd.DataFrame) -> tuple:
+def scale_features(X_train: pd.DataFrame, X_test: pd.DataFrame) -> tuple:
     """
     Melakukan standarisasi fitur menggunakan StandardScaler.
+    Scaler di-fit hanya pada X_train untuk mencegah data leakage.
 
     Parameters
     ----------
-    X : pd.DataFrame
-        DataFrame fitur.
+    X_train : pd.DataFrame
+        DataFrame fitur training.
+    X_test : pd.DataFrame
+        DataFrame fitur testing.
 
     Returns
     -------
     tuple
-        (X_scaled: pd.DataFrame, scaler: StandardScaler)
+        (X_train_scaled, X_test_scaled, scaler)
     """
     scaler = StandardScaler()
-    X_scaled = pd.DataFrame(
-        scaler.fit_transform(X),
-        columns=X.columns,
-        index=X.index
+    X_train_scaled = pd.DataFrame(
+        scaler.fit_transform(X_train),
+        columns=X_train.columns,
+        index=X_train.index
     )
-    logger.info("Standarisasi fitur selesai (StandardScaler)")
-    return X_scaled, scaler
+    X_test_scaled = pd.DataFrame(
+        scaler.transform(X_test),
+        columns=X_test.columns,
+        index=X_test.index
+    )
+    logger.info("Standarisasi fitur selesai: fit pada X_train, transform pada X_test")
+    return X_train_scaled, X_test_scaled, scaler
 
 
 def split_data(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2, random_state: int = 42) -> tuple:
@@ -306,7 +314,8 @@ def split_data(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2, random_sta
 
 def preprocess_data(raw_data_path: str, output_dir: str = None) -> tuple:
     """
-    Pipeline preprocessing lengkap: load -> clean -> encode -> categorize -> scale -> split.
+    Pipeline preprocessing lengkap: load -> clean -> encode -> categorize -> split -> scale.
+    Urutan split sebelum scale mencegah data leakage.
 
     Parameters
     ----------
@@ -318,7 +327,7 @@ def preprocess_data(raw_data_path: str, output_dir: str = None) -> tuple:
     Returns
     -------
     tuple
-        (X_train, X_test, y_train, y_test, scaler)
+        (X_train_scaled, X_test_scaled, y_train, y_test, scaler)
     """
     if output_dir is None:
         output_dir = os.path.dirname(os.path.abspath(__file__))
@@ -336,7 +345,7 @@ def preprocess_data(raw_data_path: str, output_dir: str = None) -> tuple:
     # Step 3: Remove duplicates
     df = remove_duplicates(df)
 
-    # Step 4: Handle outliers
+    # Step 4: Handle outliers (dihitung dari seluruh data sebelum split)
     df = handle_outliers(df, exclude_cols=['quality'])
 
     # Step 5: Encode categorical
@@ -345,27 +354,30 @@ def preprocess_data(raw_data_path: str, output_dir: str = None) -> tuple:
     # Step 6: Categorize quality
     df = categorize_quality(df)
 
-    # Step 7: Reset index setelah cleaning untuk menghindari misalignment
+    # Step 7: Reset index
     df = df.reset_index(drop=True)
 
     # Step 8: Separate features and target
     X = df.drop(['quality', 'quality_category'], axis=1)
     y = df['quality_category']
 
-    # Step 9: Scale features
-    X_scaled, scaler = scale_features(X)
+    # Step 9: Split data SEBELUM scaling (mencegah data leakage)
+    X_train, X_test, y_train, y_test = split_data(X, y)
 
-    # Step 10: Split data
-    X_train, X_test, y_train, y_test = split_data(X_scaled, y)
+    # Step 10: Scale features - fit hanya pada X_train, transform keduanya
+    X_train_scaled, X_test_scaled, scaler = scale_features(X_train, X_test)
 
     # Step 11: Save preprocessed data
-    df_final = pd.concat([X_scaled, y], axis=1)
+    df_full = pd.concat([X_train_scaled, y_train], axis=1)
+    df_test_full = pd.concat([X_test_scaled, y_test], axis=1)
+    df_final = pd.concat([df_full, df_test_full], axis=0).reset_index(drop=True)
+
     output_full = os.path.join(output_dir, 'wine_quality_preprocessing.csv')
     df_final.to_csv(output_full, index=False)
     logger.info(f"Dataset preprocessing disimpan ke: {output_full}")
 
-    train_data = pd.concat([X_train.reset_index(drop=True), y_train.reset_index(drop=True)], axis=1)
-    test_data = pd.concat([X_test.reset_index(drop=True), y_test.reset_index(drop=True)], axis=1)
+    train_data = pd.concat([X_train_scaled.reset_index(drop=True), y_train.reset_index(drop=True)], axis=1)
+    test_data = pd.concat([X_test_scaled.reset_index(drop=True), y_test.reset_index(drop=True)], axis=1)
 
     train_path = os.path.join(output_dir, 'wine_quality_train.csv')
     test_path = os.path.join(output_dir, 'wine_quality_test.csv')
@@ -379,7 +391,7 @@ def preprocess_data(raw_data_path: str, output_dir: str = None) -> tuple:
     logger.info("PREPROCESSING SELESAI")
     logger.info("=" * 60)
 
-    return X_train, X_test, y_train, y_test, scaler
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
 
 
 if __name__ == "__main__":
